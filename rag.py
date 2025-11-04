@@ -59,6 +59,7 @@ MODEL_CONFIG = {
     "embed_truncate": True,
 }
 
+HASH_MAP_PATH = str(Path(PERSIST_DIR) / "file_hashes.json")
 
 # --------- HASHING (Avoid Rebuilding) ----------
 def compute_vault_hash() -> str:
@@ -156,20 +157,55 @@ def collect_documents() -> list[Document]:
 
 
 def build_or_load_index(documents=None, embed_model=None):
-    # If storage already exists → load index instead of rebuilding
+    os.makedirs(PERSIST_DIR, exist_ok=True)
+
+    file_hashes = {}
+    if os.path.exists(HASH_MAP_PATH):
+        try:
+            with open(HASH_MAP_PATH, "r") as f:
+                file_hashes = json.load(f)
+        except:
+            file_hashes = {}
+
+    # Compute new hashes for current document set
+    new_hashes = {}
+    changed_docs = []
+    unchanged_nodes = []
+
+    for doc in documents:
+        h = hashlib.sha256(doc.text.encode()).hexdigest()
+        new_hashes[doc.metadata["source"]] = h
+
+        if file_hashes.get(doc.metadata["source"]) != h:
+            changed_docs.append(doc)
+        else:
+            unchanged_nodes.append(doc)
+
+    # If storage exists and only changed docs → incremental update
     if os.path.exists(STORAGE_DIR) and os.listdir(STORAGE_DIR):
-        print("[+] Loading existing index from disk...")
+        print(f"[+] Existing index detected.")
+        print(f"    {len(changed_docs)} changed files detected.")
+        print(f"    {len(unchanged_nodes)} unchanged files.\n")
+
         storage_context = StorageContext.from_defaults(persist_dir=STORAGE_DIR)
-        return load_index_from_storage(storage_context, embed_model=embed_model)
+        index = load_index_from_storage(storage_context, embed_model=embed_model)
 
-    # No index exists → build new one
-    print("[+] Building new index...")
-    index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
+        if changed_docs:
+            print("[+] Updating index with modified documents...\n")
+            index.update_documents(changed_docs, embed_model=embed_model)
+            index.storage_context.persist(persist_dir=STORAGE_DIR)
 
-    # Save it
-    index.storage_context.persist(persist_dir=STORAGE_DIR)
-    print("[+] Index saved to disk.")
+    else:
+        # No index → full build
+        print("[+] No existing index — building fresh index...\n")
+        index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
+        index.storage_context.persist(persist_dir=STORAGE_DIR)
 
+    # Save new hash map
+    with open(HASH_MAP_PATH, "w") as f:
+        json.dump(new_hashes, f, indent=2)
+
+    print("[+] Index and metadata updated.\n")
     return index
 
 
