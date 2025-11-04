@@ -153,47 +153,23 @@ def collect_documents() -> list[Document]:
 
 
 # --------- Index Build / Load ---------
-def build_or_load_index(embed_model) -> VectorStoreIndex:
-    from tqdm import tqdm
 
-    current_hash = compute_vault_hash()
 
-    # ✅ If unchanged, load existing index
-    if os.path.exists(HASH_FILE):
-        try:
-            with open(HASH_FILE, "r") as f:
-                if f.read().strip() == current_hash:
-                    storage_context = StorageContext.from_defaults(
-                        persist_dir=PERSIST_DIR
-                    )
-                    index = load_index_from_storage(storage_context)
-                    print("[+] No vault changes detected. Using existing index.\n")
-                    return index
-        except:
-            pass
+def build_or_load_index(documents=None, embed_model=None):
+    # If storage already exists → load index instead of rebuilding
+    if os.path.exists(STORAGE_DIR) and os.listdir(STORAGE_DIR):
+        print("[+] Loading existing index from disk...")
+        storage_context = StorageContext.from_defaults(persist_dir=STORAGE_DIR)
+        return load_index_from_storage(storage_context, embed_model=embed_model)
 
-    print("[!] Vault changed — rebuilding index.\n")
+    # No index exists → build new one
+    print("[+] Building new index...")
+    index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
 
-    documents = collect_documents()
-    parser = SimpleNodeParser.from_defaults(chunk_size=256, chunk_overlap=32)
-    nodes = []
+    # Save it
+    index.storage_context.persist(persist_dir=STORAGE_DIR)
+    print("[+] Index saved to disk.")
 
-    print("\n[+] Chunking documents...\n")
-    for doc in tqdm(documents, desc="Chunking", unit="doc"):
-        try:
-            nodes.extend(parser.get_nodes_from_documents([doc]))
-        except:
-            continue
-
-    print("\n[+] Embedding + Constructing Vector Index...\n")
-    index = VectorStoreIndex(nodes, embed_model=embed_model, show_progress=True)
-    index.storage_context.persist(persist_dir=PERSIST_DIR)
-
-    Path(PERSIST_DIR).mkdir(parents=True, exist_ok=True)
-    with open(HASH_FILE, "w") as f:
-        f.write(current_hash)
-
-    print("[+] Index updated and hash stored.\n")
     return index
 
 
@@ -214,8 +190,11 @@ def main() -> None:
         model_name=MODEL_CONFIG["embed_model"],
         truncate=MODEL_CONFIG["embed_truncate"],
     )
+    # collect docs first
+    documents = collect_documents()
 
-    index = build_or_load_index(embed_model=embed_model)
+    # build or load index
+    index = build_or_load_index(documents=documents, embed_model=embed_model)
     query_engine = index.as_query_engine(similarity_top_k=TOP_K, llm=llm)
 
     print("\nRAG is ready. Type a question below. (exit/quit to stop)\n")
