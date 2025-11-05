@@ -55,8 +55,8 @@ PERSIST_DIR = STORAGE_DIR
 HASH_MAP_PATH = str(Path(STORAGE_DIR) / "file_hashes.json")
 # --------- MODEL CONFIG SWITCH ---------
 MODEL_CONFIG = {
-    "llm_model": "mistral:7b",
-    # Stable embedding model for local Macs
+    "llm_model": "deepseek-r1:7b",
+    # stable embed model
     "embed_model": "all-minilm",
     "embed_truncate": True,
 }
