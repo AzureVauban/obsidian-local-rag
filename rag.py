@@ -164,7 +164,7 @@ def collect_documents() -> list[Document]:
 def build_or_load_index(documents=None, embed_model=None):
     os.makedirs(PERSIST_DIR, exist_ok=True)
 
-    # Load previous file-hash map for incremental updates
+    # Load previous file-hash map
     file_hashes = {}
     if os.path.exists(HASH_MAP_PATH):
         try:
@@ -173,47 +173,31 @@ def build_or_load_index(documents=None, embed_model=None):
         except:
             file_hashes = {}
 
+    # Compute new hash map
     new_hashes = {}
     changed_docs = []
-    unchanged_docs = []
-
     for doc in documents:
         h = hashlib.sha256(doc.text.encode()).hexdigest()
         new_hashes[doc.metadata["source"]] = h
-
         if file_hashes.get(doc.metadata["source"]) != h:
             changed_docs.append(doc)
-        else:
-            unchanged_docs.append(doc)
 
-    # If index storage exists → load it
-    if os.path.exists(STORAGE_DIR) and os.listdir(STORAGE_DIR):
-        print(f"[+] Existing index detected.")
-        print(f"    {len(changed_docs)} changed files.")
-        print(f"    {len(unchanged_docs)} unchanged files.\n")
-
+    # Case 1: No changes and index exists → load
+    if os.path.exists(STORAGE_DIR) and os.listdir(STORAGE_DIR) and len(changed_docs) == 0:
+        print("[+] No changes detected — loading existing index.\n")
         storage_context = StorageContext.from_defaults(persist_dir=STORAGE_DIR)
-        index = load_index_from_storage(storage_context, embed_model=embed_model)
+        return load_index_from_storage(storage_context, embed_model=embed_model)
 
-        if changed_docs:
-            print("[+] Updating index with modified documents...\n")
-            index = VectorStoreIndex.from_documents(
-                changed_docs,
-                storage_context=index.storage_context,
-                embed_model=embed_model,
-            )
-            index.storage_context.persist(persist_dir=STORAGE_DIR)
-    else:
-        # No stored index → full build
-        print("[+] No existing index — building full index...\n")
-        index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
-        index.storage_context.persist(persist_dir=STORAGE_DIR)
+    # Case 2: Changes or no index → full rebuild (stable & correct)
+    print(f"[!] Rebuilding index. Changed files: {len(changed_docs)}\n")
+    index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
+    index.storage_context.persist(persist_dir=STORAGE_DIR)
 
-    # Save updated hash map
+    # Update stored hash map
     with open(HASH_MAP_PATH, "w") as f:
         json.dump(new_hashes, f, indent=2)
 
-    print("[+] Index saved and metadata updated.\n")
+    print("[+] Index rebuilt and hash map updated.\n")
     return index
 
 
@@ -229,7 +213,11 @@ def write_answer(query: str, answer: str) -> None:
 
 # --------- MAIN LOOP ---------
 def main() -> None:
-    llm = Ollama(model=MODEL_CONFIG["llm_model"])
+    llm = Ollama(
+        model=MODEL_CONFIG["llm_model"],
+        request_timeout=500,
+        keep_alive="5m"
+    )
     embed_model = OllamaEmbedding(
         model_name=MODEL_CONFIG["embed_model"],
         truncate=MODEL_CONFIG["embed_truncate"],
@@ -239,7 +227,11 @@ def main() -> None:
 
     # build or load index
     index = build_or_load_index(documents=documents, embed_model=embed_model)
-    query_engine = index.as_query_engine(similarity_top_k=TOP_K, llm=llm)
+    query_engine = index.as_query_engine(
+        similarity_top_k=TOP_K,
+        llm=llm,
+        response_mode="compact"
+    )
 
     print("\nRAG is ready. Type a question below. (exit/quit to stop)\n")
     while True:
