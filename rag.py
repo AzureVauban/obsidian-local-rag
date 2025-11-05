@@ -2,6 +2,7 @@ import os
 import datetime
 from pathlib import Path
 import hashlib
+import json
 
 # LlamaIndex core
 from llama_index.core import (
@@ -60,6 +61,7 @@ MODEL_CONFIG = {
 }
 
 HASH_MAP_PATH = str(Path(PERSIST_DIR) / "file_hashes.json")
+
 
 # --------- HASHING (Avoid Rebuilding) ----------
 def compute_vault_hash() -> str:
@@ -139,16 +141,19 @@ def collect_documents() -> list[Document]:
 
     for fpath in tqdm(all_files, desc="Collecting Documents", unit="files"):
         ext = os.path.splitext(fpath)[1].lower()
-
-        if ext in (".md", ".txt"):
+        if ext == ".pdf":
+            text = pdf_to_text(fpath)
+        elif ext in (".md", ".txt"):
             try:
                 with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
                     text = f.read().strip()
-                if text:
-                    rel = os.path.relpath(fpath, VAULT_PATH)
-                    docs.append(Document(text=text, metadata={"source": rel}))
             except:
                 continue
+        else:
+            continue
+        if text:
+            rel = os.path.relpath(fpath, VAULT_PATH)
+            docs.append(Document(text=text, metadata={"source": rel}))
 
     return docs
 
@@ -159,6 +164,7 @@ def collect_documents() -> list[Document]:
 def build_or_load_index(documents=None, embed_model=None):
     os.makedirs(PERSIST_DIR, exist_ok=True)
 
+    # Load previous file-hash map for incremental updates
     file_hashes = {}
     if os.path.exists(HASH_MAP_PATH):
         try:
@@ -167,10 +173,9 @@ def build_or_load_index(documents=None, embed_model=None):
         except:
             file_hashes = {}
 
-    # Compute new hashes for current document set
     new_hashes = {}
     changed_docs = []
-    unchanged_nodes = []
+    unchanged_docs = []
 
     for doc in documents:
         h = hashlib.sha256(doc.text.encode()).hexdigest()
@@ -179,33 +184,36 @@ def build_or_load_index(documents=None, embed_model=None):
         if file_hashes.get(doc.metadata["source"]) != h:
             changed_docs.append(doc)
         else:
-            unchanged_nodes.append(doc)
+            unchanged_docs.append(doc)
 
-    # If storage exists and only changed docs → incremental update
+    # If index storage exists → load it
     if os.path.exists(STORAGE_DIR) and os.listdir(STORAGE_DIR):
         print(f"[+] Existing index detected.")
-        print(f"    {len(changed_docs)} changed files detected.")
-        print(f"    {len(unchanged_nodes)} unchanged files.\n")
+        print(f"    {len(changed_docs)} changed files.")
+        print(f"    {len(unchanged_docs)} unchanged files.\n")
 
         storage_context = StorageContext.from_defaults(persist_dir=STORAGE_DIR)
         index = load_index_from_storage(storage_context, embed_model=embed_model)
 
         if changed_docs:
             print("[+] Updating index with modified documents...\n")
-            index.update_documents(changed_docs, embed_model=embed_model)
+            index = VectorStoreIndex.from_documents(
+                changed_docs,
+                storage_context=index.storage_context,
+                embed_model=embed_model,
+            )
             index.storage_context.persist(persist_dir=STORAGE_DIR)
-
     else:
-        # No index → full build
-        print("[+] No existing index — building fresh index...\n")
+        # No stored index → full build
+        print("[+] No existing index — building full index...\n")
         index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
         index.storage_context.persist(persist_dir=STORAGE_DIR)
 
-    # Save new hash map
+    # Save updated hash map
     with open(HASH_MAP_PATH, "w") as f:
         json.dump(new_hashes, f, indent=2)
 
-    print("[+] Index and metadata updated.\n")
+    print("[+] Index saved and metadata updated.\n")
     return index
 
 
