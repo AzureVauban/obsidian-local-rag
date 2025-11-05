@@ -26,7 +26,7 @@ VAULT_PATH = (
     "/Users/michaelelder/Documents/Documents/Obsidian Vaults/Personal-Obsidian-Vault"
 )
 OUTPUT_DIR = os.path.join(VAULT_PATH, "Generated")
-PERSIST_DIR = str(Path.home() / "local-llm-rag" / "index_store")
+
 
 INCLUDE_TOP_LEVEL = [
     "02 - Projects",
@@ -51,7 +51,8 @@ CHUNK_SIZE = 1024
 CHUNK_OVERLAP = 128
 TOP_K = 5
 STORAGE_DIR = "./storage"
-
+PERSIST_DIR = STORAGE_DIR
+HASH_MAP_PATH = str(Path(STORAGE_DIR) / "file_hashes.json")
 # --------- MODEL CONFIG SWITCH ---------
 MODEL_CONFIG = {
     "llm_model": "mistral:7b",
@@ -59,8 +60,6 @@ MODEL_CONFIG = {
     "embed_model": "all-minilm",
     "embed_truncate": True,
 }
-
-HASH_MAP_PATH = str(Path(PERSIST_DIR) / "file_hashes.json")
 
 
 # --------- HASHING (Avoid Rebuilding) ----------
@@ -183,7 +182,11 @@ def build_or_load_index(documents=None, embed_model=None):
             changed_docs.append(doc)
 
     # Case 1: No changes and index exists → load
-    if os.path.exists(STORAGE_DIR) and os.listdir(STORAGE_DIR) and len(changed_docs) == 0:
+    if (
+        os.path.exists(STORAGE_DIR)
+        and os.listdir(STORAGE_DIR)
+        and len(changed_docs) == 0
+    ):
         print("[+] No changes detected — loading existing index.\n")
         storage_context = StorageContext.from_defaults(persist_dir=STORAGE_DIR)
         return load_index_from_storage(storage_context, embed_model=embed_model)
@@ -213,11 +216,7 @@ def write_answer(query: str, answer: str) -> None:
 
 # --------- MAIN LOOP ---------
 def main() -> None:
-    llm = Ollama(
-        model=MODEL_CONFIG["llm_model"],
-        request_timeout=500,
-        keep_alive="5m"
-    )
+    llm = Ollama(model=MODEL_CONFIG["llm_model"], request_timeout=500, keep_alive="5m")
     embed_model = OllamaEmbedding(
         model_name=MODEL_CONFIG["embed_model"],
         truncate=MODEL_CONFIG["embed_truncate"],
@@ -228,9 +227,7 @@ def main() -> None:
     # build or load index
     index = build_or_load_index(documents=documents, embed_model=embed_model)
     query_engine = index.as_query_engine(
-        similarity_top_k=TOP_K,
-        llm=llm,
-        response_mode="compact"
+        similarity_top_k=TOP_K, llm=llm, response_mode="compact"
     )
 
     print("\nRAG is ready. Type a question below. (exit/quit to stop)\n")
