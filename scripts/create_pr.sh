@@ -13,16 +13,16 @@ gh auth status >/dev/null || { echo "You must be authenticated with 'gh auth log
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
 # Determine base branch logic
-if [[ "$BRANCH" == "develop" ]]; then
+if [[ "$BRANCH" == "canary" ]]; then
   BASE="main"
   if ! git show-ref --verify --quiet refs/heads/main; then
-    echo "Error: 'main' branch does not exist in this repository. Cannot create PR from develop."
+    echo "Error: 'main' branch does not exist in this repository. Cannot create PR from canary."
     exit 1
   fi
 else
-  BASE="develop"
-  if ! git show-ref --verify --quiet refs/heads/develop; then
-    echo "Error: 'develop' branch does not exist in this repository. Cannot create PR."
+  BASE="canary"
+  if ! git show-ref --verify --quiet refs/heads/canary; then
+    echo "Error: 'canary' branch does not exist in this repository. Cannot create PR."
     exit 1
   fi
 fi
