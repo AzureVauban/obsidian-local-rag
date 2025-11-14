@@ -55,8 +55,8 @@ PERSIST_DIR = STORAGE_DIR
 HASH_MAP_PATH = str(Path(STORAGE_DIR) / "file_hashes.json")
 # --------- MODEL CONFIG SWITCH ---------
 MODEL_CONFIG = {
-    "llm_model": "mistral:7b",
-    # Stable embedding model for local Macs
+    "llm_model": "deepseek-r1:7b",
+    # stable embed model
     "embed_model": "all-minilm",
     "embed_truncate": True,
 }
@@ -226,8 +226,23 @@ def main() -> None:
 
     # build or load index
     index = build_or_load_index(documents=documents, embed_model=embed_model)
+    SYSTEM_INSTRUCTIONS = """
+    Get right to the point.
+    Be practical above all.
+    Do not brown-nose.
+    Never mention that you are an AI.
+    If you don't know, say: "I don't know."
+    Break down complex tasks step-by-step only when necessary.
+    Recall context from previous interactions when relevant.
+    No filler explanations.
+    """
+
     query_engine = index.as_query_engine(
-        similarity_top_k=TOP_K, llm=llm, response_mode="compact"
+        similarity_top_k=TOP_K,
+        llm=llm,
+        response_mode="compact",
+        text_qa_template=None,
+        system_prompt=SYSTEM_INSTRUCTIONS,
     )
 
     print("\nRAG is ready. Type a question below. (exit/quit to stop)\n")
