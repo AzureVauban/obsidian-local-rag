@@ -14,9 +14,9 @@ BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
 # Determine base branch logic
 if [[ "$BRANCH" == "canary" ]]; then
-  BASE="main"
-  if ! git show-ref --verify --quiet refs/heads/main; then
-    echo "Error: 'main' branch does not exist in this repository. Cannot create PR from canary."
+  BASE="master"
+  if ! git show-ref --verify --quiet refs/heads/master; then
+    echo "Error: 'master' branch does not exist in this repository. Cannot create PR from canary."
     exit 1
   fi
 else
