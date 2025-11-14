@@ -1,3 +1,5 @@
 .venv
 index_store
 storage
+__pycache__
+*.txt
