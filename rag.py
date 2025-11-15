@@ -55,8 +55,7 @@ PERSIST_DIR = STORAGE_DIR
 HASH_MAP_PATH = str(Path(STORAGE_DIR) / "file_hashes.json")
 # --------- MODEL CONFIG SWITCH ---------
 MODEL_CONFIG = {
-    "llm_model": "deepseek-r1:7b",
-    # stable embed model
+    "llm_model": "deepseek-r1:7b", # stable embed model
     "embed_model": "all-minilm",
     "embed_truncate": True,
 }
@@ -226,6 +225,8 @@ def main() -> None:
 
     # build or load index
     index = build_or_load_index(documents=documents, embed_model=embed_model)
+    
+    # todo make it so that system instructions can be passed in from a file
     SYSTEM_INSTRUCTIONS = """
     Get right to the point.
     Be practical above all.
